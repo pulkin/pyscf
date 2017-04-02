@@ -62,7 +62,7 @@ def get_j_kpts(mydf, dm_kpts, hermi=1, kpts=np.zeros((1,3)), kpts_band=None):
         vj_kpts = np.empty((nset,nband,nao,nao))
     else:
         vj_kpts = np.empty((nset,nband,nao,nao), dtype=np.complex128)
-    for k, aoR in mydf.aoR_loop(gs, kpts_band):
+    for k, aoR in mydf.aoR_loop(gs, kpts_band = kpts_band):
         for i in range(nset):
             vj_kpts[i,k] = weight * lib.dot(aoR.T.conj()*vR[i], aoR)
 
