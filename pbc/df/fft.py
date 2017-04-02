@@ -130,7 +130,7 @@ class FFTDF(lib.StreamObject):
         self.verbose = cell.verbose
         self.max_memory = cell.max_memory
 
-        self.kpts = numpy.array(kpts)
+        self.kpts = kpts
         self.gs = cell.gs
 
         self.blockdim = 240 # to mimic molecular DF object
@@ -139,21 +139,49 @@ class FFTDF(lib.StreamObject):
         self.exxdiv = None  # to mimic KRHF/KUHF object in function get_coulG
         self._numint = numint._KNumInt()
         self._keys = set(self.__dict__.keys())
-        self._update_ao()
+        self.__ao_stale__ = True
+    
+    # ---------
+    # self.kpts
+    # ---------
+    def get_kpts(self):
+        return numpy.copy(self.__kpts__)
+    def set_kpts(self,kpts):
+        # TODO: checks
+        if not "__kpts__" in dir(self) or not numpy.array_equal(kpts, self.__kpts__):
+            self.__ao_stale__ = True
+            self.__kpts__ = numpy.copy(kpts)
+    kpts = property(fget = get_kpts, fset = set_kpts)
+    
+    # -------
+    # self.gs
+    # -------
+    def get_gs(self):
+        return tuple(self.__gs__)
+    def set_gs(self,gs):
+        # TODO: checks
+        if not "__gs__" in dir(self) or not numpy.array_equal(gs, self.__gs__):
+            self.__ao_stale__ = True
+            self.__gs__ = numpy.array(gs, dtype = int)
+    gs = property(fget = get_gs, fset = set_gs)
+    
+    @property
+    def atomic_orbitals(self):
+        """
+        Atomic orbitals for a given setup (read-only).
+        """
+        if self.__ao_stale__:
+            coords = self.cell.gen_uniform_grids(self.__gs__)
+            self._numint.non0tab = self._numint.make_mask(self.cell, coords)
+            self.__ao__ = self._numint.eval_ao(
+                self.cell,
+                coords,
+                self.__kpts__,
+                non0tab = self._numint.non0tab,
+            )
+            self.__ao_stale__ = False
+        return self.__ao__
         
-    def _update_ao(self):
-        """
-        Updates atomic orbitals.
-        """
-        coords = self.cell.gen_uniform_grids(self.gs)
-        self._numint.non0tab = self._numint.make_mask(self.cell, coords)
-        self._ao = self._numint.eval_ao(
-            self.cell,
-            coords,
-            self.kpts,
-            non0tab = self._numint.non0tab,
-        )
-
     def dump_flags(self):
         log = logger.Logger(self.stdout, self.verbose)
         logger.info(self, '\n')
@@ -165,26 +193,18 @@ class FFTDF(lib.StreamObject):
     def aoR_loop(self, gs=None, kpts=None, kpts_band=None):
 
         cell = self.cell
-        needs_ao_update = False
         
         if gs is None:
             gs = self.gs
-        elif not tuple(gs) == tuple(self.gs):
-            self.gs = gs
-            needs_ao_update = True
+        self.gs = gs
             
         if kpts is None:
             kpts = self.kpts
-        elif not numpy.array_equal(kpts, self.kpts):
-            self.kpts = numpy.array(kpts)
-            needs_ao_update = True
-            
-        if needs_ao_update:
-            self._update_ao()
+        self.kpts = kpts
             
         if kpts_band is None:
             for k in range(len(kpts)):
-                yield k, self._ao[k]
+                yield k, self.atomic_orbitals[k]
         else:
             where = [member(k, kpts) for k in kpts_band]
             where = [k_id[0] if len(k_id)>0 else None for k_id in where]
@@ -197,7 +217,7 @@ class FFTDF(lib.StreamObject):
                     new_kpts,
                     non0tab=self._numint.non0tab
                 ))
-            aoR = (self._ao[where[k]] if not where[k] is None else next(new_ao) for k in range(len(kpts_band)))
+            aoR = (self.atomic_orbitals[where[k]] if not where[k] is None else next(new_ao) for k in range(len(kpts_band)))
             
             if kpts_band.ndim == 1:
                 yield 0, next(aoR)
