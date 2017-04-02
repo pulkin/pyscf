@@ -133,7 +133,7 @@ class KnowValues(unittest.TestCase):
         kpt = np.random.random(3)
         ni = numint._NumInt()
         ao0 = eval_ao(cell, grids.coords, kpt)
-        ao1 = ni.eval_ao(cell, grids.coords, kpt)
+        ao1 = ni.eval_ao(cell, grids.coords, kpt = kpt)
         self.assertTrue(numpy.allclose(ao0, ao1, atol=1e-9, rtol=1e-9))
         self.assertAlmostEqual(finger(ao1), (-2.4066959390326477-0.98044994099240701j), 8)
 
@@ -156,7 +156,7 @@ class KnowValues(unittest.TestCase):
         dms = np.random.random((2,nao,nao))
         dms = (dms + dms.transpose(0,2,1)) * .5
         ni = numint._NumInt()
-        ne, exc, vmat = ni.nr_rks(cell, grids, 'blyp', dms[0], 0, kpts[0])
+        ne, exc, vmat = ni.nr_rks(cell, grids, 'blyp', dms[0], hermi = 0, kpt = kpts[0])
         self.assertAlmostEqual(ne, 5.0499199224525153, 8)
         self.assertAlmostEqual(exc, -3.8870579114663886, 8)
         self.assertAlmostEqual(finger(vmat), 0.42538491159934377+0.14139753327162483j, 8)
