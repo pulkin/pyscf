@@ -18,6 +18,7 @@ from pyscf.pbc.gto import pseudo
 from pyscf.pbc.dft import numint
 from pyscf.pbc.df import ft_ao
 from pyscf.pbc.df import fft_ao2mo
+from pyscf.pbc.df.df_jk import member
 
 
 def get_nuc(mydf, kpts=None):
@@ -65,7 +66,7 @@ def get_pp(mydf, kpts=None):
     # vpploc evaluated in real-space
     vpplocR = tools.ifft(vpplocG, cell.gs).real
     vpp = [lib.dot(aoR.T.conj()*vpplocR, aoR)
-           for k, aoR in mydf.aoR_loop(gs, kpts_lst)]
+           for k, aoR in mydf.aoR_loop(gs, kpts_band = kpts_lst)]
 
     # vppnonloc evaluated in reciprocal space
     fakemol = gto.Mole()
@@ -162,7 +163,7 @@ class FFTDF(lib.StreamObject):
         logger.debug1(self, '    kpts = %s', self.kpts)
 
     def aoR_loop(self, gs=None, kpts=None, kpts_band=None):
-        
+
         cell = self.cell
         needs_ao_update = False
         
@@ -185,21 +186,24 @@ class FFTDF(lib.StreamObject):
             for k in range(len(kpts)):
                 yield k, self._ao[k]
         else:
-            
-            ngrids = numpy.prod(numpy.asarray(gs)*2+1)
+            where = [member(k, kpts) for k in kpts_band]
+            where = [k_id[0] if len(k_id)>0 else None for k_id in where]
+            new_kpts = [k for k,w in zip(kpts_band, where) if w is None]
             coords = cell.gen_uniform_grids(gs)
-            aoR = self._numint.eval_ao(
-                cell,
-                coords,
-                kpts_band,
-                non0tab=self._numint.non0tab
-            )
+            if len(new_kpts)>0:
+                new_ao = iter(self._numint.eval_ao(
+                    cell,
+                    coords,
+                    new_kpts,
+                    non0tab=self._numint.non0tab
+                ))
+            aoR = (self._ao[where[k]] if not where[k] is None else next(new_ao) for k in range(len(kpts_band)))
             
             if kpts_band.ndim == 1:
-                yield 0, aoR
+                yield 0, next(aoR)
             else:
                 for k in range(len(kpts_band)):
-                    yield k, aoR[k]
+                    yield k, next(aoR)
 
     get_pp = get_pp
     get_nuc = get_nuc
