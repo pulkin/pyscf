@@ -144,26 +144,52 @@ class FFTDF(lib.StreamObject):
     # ---------
     # self.kpts
     # ---------
+    
     def get_kpts(self):
-        return numpy.copy(self.__kpts__)
+        return self.__kpts__
+        
     def set_kpts(self,kpts):
-        # TODO: checks
+        kpts = numpy.array(kpts, dtype = float)
+        
+        if not kpts.shape[-1] == 3:
+            raise ValueError("'kpts' with last dimension '3' expected")
+            
+        if not len(kpts.shape) in (1,2):
+            raise ValueError("'kpts' should be a 1D or a 2D array")
+            
+        if len(kpts.shape) == 1:
+            kpts = kpts[numpy.newaxis,:]
+            
         if not "__kpts__" in dir(self) or not numpy.array_equal(kpts, self.__kpts__):
             self.__ao_stale__ = True
-            self.__kpts__ = numpy.copy(kpts)
+            self.__kpts__ = kpts
+            kpts.setflags(write = False)
+            
     kpts = property(fget = get_kpts, fset = set_kpts)
     
     # -------
     # self.gs
     # -------
+    
     def get_gs(self):
-        return tuple(self.__gs__)
+        return self.__gs__
+        
     def set_gs(self,gs):
-        # TODO: checks
+        gs = numpy.array(gs, dtype = int)
+        
+        if not gs.shape == (3,):
+            raise ValueError("'gs' with 3 elements expected")
+            
         if not "__gs__" in dir(self) or not numpy.array_equal(gs, self.__gs__):
             self.__ao_stale__ = True
-            self.__gs__ = numpy.array(gs, dtype = int)
+            self.__gs__ = gs
+            gs.setflags(write = False)
+            
     gs = property(fget = get_gs, fset = set_gs)
+    
+    # -------
+    # self.atomic_orbitals
+    # -------
     
     @property
     def atomic_orbitals(self):
