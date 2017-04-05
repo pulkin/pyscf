@@ -135,8 +135,9 @@ def eval_rho(cell, ao, dm, non0tab=None, xctype='LDA', verbose=None):
 
     '''
 
-    ao = numpy.ascontiguousarray(ao)
-
+    if not ao.flags.c_contiguous:
+        ao = numpy.ascontiguousarray(ao)
+        
     if xctype == 'LDA':
         ngrids, nao = ao.shape
     else:
