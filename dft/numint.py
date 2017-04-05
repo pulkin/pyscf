@@ -164,7 +164,7 @@ def eval_rho(mol, ao, dm, non0tab=None, xctype='LDA', verbose=None):
     >>> dm = dm + dm.T
     >>> rho, dx_rho, dy_rho, dz_rho = eval_rho(mol, ao, dm, xctype='LDA')
     '''
-    assert(ao.flags.c_contiguous)
+    ao = numpy.ascontiguousarray(ao)
     xctype = xctype.upper()
     if xctype == 'LDA':
         ngrids, nao = ao.shape
@@ -238,7 +238,7 @@ def eval_rho2(mol, ao, mo_coeff, mo_occ, non0tab=None, xctype='LDA',
         if xctype = GGA;  (6,N) array for meta-GGA, where last two rows are
         \nabla^2 rho and tau = 1/2(\nabla f)^2
     '''
-    assert(ao.flags.c_contiguous)
+    ao = numpy.ascontiguousarray(ao)
     xctype = xctype.upper()
     if xctype == 'LDA':
         ngrids, nao = ao.shape
@@ -361,7 +361,7 @@ def eval_mat(mol, ao, weight, rho, vxc,
         XC potential matrix in 2D array of shape (nao,nao) where nao is the
         number of AO functions.
     '''
-    assert(ao.flags.c_contiguous)
+    ao = numpy.ascontiguousarray(ao)
     xctype = xctype.upper()
     if xctype == 'LDA':
         ngrids, nao = ao.shape
