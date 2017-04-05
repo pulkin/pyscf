@@ -760,9 +760,12 @@ def einsum(idx_str, *tensors):
     insert_B_loc = 0
     for n in shared_idxAB:
         if rangeA[n] != rangeB[n]:
-            print("ERROR: In index string", idx_str, ", the range of index", n, "is different in A (%d) and B (%d)"%(
-                    rangeA[n], rangeB[n]))
-            raise SystemExit
+            raise RuntimeError("ERROR: In index string {:}, the range of index {:} is different in A ({:d}) and B ({:d})".format(
+                idx_str,
+                n,
+                rangeA[n],
+                rangeB[n]
+            ))
 
         # Bring idx all the way to the right for A
         # and to the left (but preserve order) for B
