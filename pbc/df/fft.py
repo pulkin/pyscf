@@ -198,7 +198,9 @@ class FFTDF(lib.StreamObject):
         """
         if self.__ao_stale__:
             coords = self.cell.gen_uniform_grids(self.__gs__)
-            self._numint.non0tab = self._numint.make_mask(self.cell, coords)
+            nblks = (len(coords)+numint.BLKSIZE-1)//numint.BLKSIZE
+            self._numint.non0tab = numpy.ones((nblks, self.cell.nbas), dtype=numpy.uint8)
+            #self._numint.non0tab = self._numint.make_mask(self.cell, coords)
             self.__ao__ = self._numint.eval_ao(
                 self.cell,
                 coords,
