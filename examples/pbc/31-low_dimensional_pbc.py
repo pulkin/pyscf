@@ -27,24 +27,28 @@ cell.build(unit = 'B',
            verbose = 0,
            basis = 'sto3g')
 mf = pbchf.RHF(cell)
-mf.with_df = pdf.PWDF(cell)
+mf.with_df = pdf.AFTDF(cell)
 e.append(mf.kernel())
 
 mf = pbchf.RHF(cell)
 mf.with_df = pdf.DF(cell)
 mf.with_df.auxbasis = 'weigend'
+# The above two lines of initialization can be replaced by a shortcut function
+# mf = pbchf.RHF(cell).density_fit(auxbasis='weigend')
 e.append(mf.kernel())
 
 mf = pbchf.RHF(cell)
 mf.with_df = pdf.MDF(cell)
 mf.with_df.auxbasis = 'weigend'
+# The above two lines of initialization can be replaced by a shortcut function
+# mf = pbchf.RHF(cell).mix_density_fit(auxbasis='weigend')
 e.append(mf.kernel())
 
 mol = cell.to_mol()
 mf = scf.RHF(mol)
 e.append(mf.kernel())
 
-print('0D:  PW       DF       MDF       super-mole')
+print('0D:  AFT      DF       MDF       super-mole')
 print(e)
 
 ##################################################
@@ -64,19 +68,15 @@ cell.build(unit = 'B',
            verbose = 0,
            basis='sto3g')
 mf = pbchf.KRHF(cell)
-mf.with_df = pdf.PWDF(cell)
+mf.with_df = pdf.AFTDF(cell)
 mf.kpts = cell.make_kpts([4,1,1])
 e.append(mf.kernel())
 
-mf = pbchf.KRHF(cell)
-mf.with_df = pdf.DF(cell)
-mf.with_df.auxbasis = 'weigend'
+mf = pbchf.KRHF(cell).density_fit(auxbasis='weigend')
 mf.kpts = cell.make_kpts([4,1,1])
 e.append(mf.kernel())
 
-mf = pbchf.KRHF(cell)
-mf.with_df = pdf.MDF(cell)
-mf.with_df.auxbasis = 'weigend'
+mf = pbchf.KRHF(cell).mix_density_fit(auxbasis='weigend')
 mf.kpts = cell.make_kpts([4,1,1])
 e.append(mf.kernel())
 
@@ -84,7 +84,7 @@ mol = tools.super_cell(cell, [4,1,1]).to_mol()
 mf = scf.RHF(mol)
 e.append(mf.kernel()/4)
 
-print('1D:  PW       DF       MDF       super-mole')
+print('1D:  AFT      DF       MDF       super-mole')
 print(e)
 
 ##################################################
@@ -104,26 +104,20 @@ cell.build(unit = 'B',
            verbose = 0,
            basis='sto3g')
 mf = pbchf.KRHF(cell)
-mf.with_df = pdf.PWDF(cell)
+mf.with_df = pdf.AFTDF(cell)
 mf.kpts = cell.make_kpts([4,4,1])
 e.append(mf.kernel())
 
-mf = pbchf.KRHF(cell)
-mf.with_df = pdf.DF(cell)
-mf.with_df.auxbasis = 'weigend'
-mf.kpts = cell.make_kpts([4,4,1])
+mf = pbchf.KRHF(cell, cell.make_kpts([4,4,1])).density_fit(auxbasis='weigend')
 e.append(mf.kernel())
 
-mf = pbchf.KRHF(cell)
-mf.with_df = pdf.MDF(cell)
-mf.with_df.auxbasis = 'weigend'
-mf.kpts = cell.make_kpts([4,4,1])
+mf = pbchf.KRHF(cell, cell.make_kpts([4,4,1])).mix_density_fit(auxbasis='weigend')
 e.append(mf.kernel())
 
 mol = tools.super_cell(cell, [4,4,1]).to_mol()
 mf = scf.RHF(mol)
 e.append(mf.kernel()/16)
 
-print('2D:  PW       DF       MDF       super-mole')
+print('2D:  AFT      DF       MDF       super-mole')
 print(e)
 
