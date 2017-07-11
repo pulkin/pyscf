@@ -18,7 +18,7 @@ from pyscf.pbc.gto import pseudo
 from pyscf.pbc.dft import numint
 from pyscf.pbc.df import ft_ao
 from pyscf.pbc.df import fft_ao2mo
-from pyscf.pbc.df.df_jk import member
+from pyscf.pbc.lib.kpt_misc import member, gamma_point
 
 
 def get_nuc(mydf, kpts=None):
