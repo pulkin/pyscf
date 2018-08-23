@@ -462,6 +462,7 @@ class RCCSD(pyscf.cc.ccsd.CCSD):
         self.ip_partition = None
         self.ea_partition = None
         self.direct = True  # If possible, use GDF to compute Wvvvv on-the-fly
+        self.suppress_exxdiv = True
 
         keys = set(['kpts', 'khelper', 'made_ee_imds',
                     'made_ip_imds', 'made_ea_imds', 'ip_partition',
@@ -597,7 +598,7 @@ class RCCSD(pyscf.cc.ccsd.CCSD):
         return self.e_corr, self.t1, self.t2
 
     def ao2mo(self, mo_coeff=None):
-        return _ERIS(self, mo_coeff)
+        return _ERIS(self, mo_coeff, suppress_exxdiv=self.suppress_exxdiv)
 
     def vector_size_ip(self):
         nocc = self.nocc
@@ -1222,7 +1223,7 @@ def padded_mo_coeff(cc, mo_coeff):
 
 
 class _ERIS:  # (pyscf.cc.ccsd._ChemistsERIs):
-    def __init__(self, cc, mo_coeff=None, method='incore',
+    def __init__(self, cc, mo_coeff=None, method='incore', suppress_exxdiv=True,
                  ao2mofn=pyscf.ao2mo.outcore.general_iofree):
         from pyscf.pbc import df
         from pyscf.pbc import tools
@@ -1248,9 +1249,12 @@ class _ERIS:  # (pyscf.cc.ccsd._ChemistsERIs):
 
         # Re-make our fock MO matrix elements from density and fock AO
         dm = cc._scf.make_rdm1(cc.mo_coeff, cc.mo_occ)
-        with lib.temporary_env(cc._scf, exxdiv=None):
-            # _scf.exxdiv affects eris.fock. HF exchange correction should be
-            # excluded from the Fock matrix.
+        if suppress_exxdiv:
+            with lib.temporary_env(cc._scf, exxdiv=None):
+                # _scf.exxdiv affects eris.fock. HF exchange correction should be
+                # excluded from the Fock matrix.
+                fockao = cc._scf.get_hcore() + cc._scf.get_veff(cell, dm)
+        else:
             fockao = cc._scf.get_hcore() + cc._scf.get_veff(cell, dm)
         self.fock = np.asarray([reduce(np.dot, (mo.T.conj(), fockao[k], mo))
                                 for k, mo in enumerate(mo_coeff)])
