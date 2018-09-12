@@ -472,7 +472,6 @@ class RCCSD(pyscf.cc.ccsd.CCSD):
         self.ip_partition = None
         self.ea_partition = None
         self.direct = True  # If possible, use GDF to compute Wvvvv on-the-fly
-        self.suppress_exxdiv = True
 
         keys = set(['kpts', 'khelper', 'made_ee_imds',
                     'made_ip_imds', 'made_ea_imds', 'ip_partition',
@@ -614,7 +613,7 @@ class RCCSD(pyscf.cc.ccsd.CCSD):
         return self.e_corr, self.t1, self.t2
 
     def ao2mo(self, mo_coeff=None):
-        return _ERIS(self, mo_coeff, suppress_exxdiv=self.suppress_exxdiv)
+        return _ERIS(self, mo_coeff)
 
     def vector_size_ip(self):
         nocc = self.nocc
@@ -625,7 +624,7 @@ class RCCSD(pyscf.cc.ccsd.CCSD):
         return size
 
     def ipccsd(self, nroots=1, koopmans=False, guess=None, partition=None,
-               kptlist=None):
+               kptlist=None, g0fix=False):
         '''Calculate (N-1)-electron charged excitations via IP-EOM-CCSD.
 
         Kwargs:
@@ -713,11 +712,14 @@ class RCCSD(pyscf.cc.ccsd.CCSD):
                 guess = None
 
             evals_k = evals_k.real
-            evals[k] = evals_k
-            evecs[k] = evecs_k
 
             if nroots == 1:
                 evals_k, evecs_k = [evals_k], [evecs_k]
+
+            if g0fix:
+                evals_k = tuple(correct_eom_g0(self, "ip", self.ip_vector_to_amplitudes(j)[0], k, i) for i, j in zip(evals_k, evecs_k))
+            evals[k] = evals_k
+            evecs[k] = evecs_k
 
             for n, en, vn in zip(range(nroots), evals_k, evecs_k):
                 r1, r2 = self.ip_vector_to_amplitudes(vn)
@@ -880,7 +882,7 @@ class RCCSD(pyscf.cc.ccsd.CCSD):
         return size
 
     def eaccsd(self, nroots=1, koopmans=False, guess=None, partition=None,
-               kptlist=None):
+               kptlist=None, g0fix=False):
         '''Calculate (N+1)-electron charged excitations via EA-EOM-CCSD.
 
         Kwargs:
@@ -956,11 +958,14 @@ class RCCSD(pyscf.cc.ccsd.CCSD):
                 guess = None
 
             evals_k = evals_k.real
-            evals[k] = evals_k
-            evecs[k] = evecs_k
 
             if nroots == 1:
                 evals_k, evecs_k = [evals_k], [evecs_k]
+
+            if g0fix:
+                evals_k = tuple(correct_eom_g0(self, "ea", self.ip_vector_to_amplitudes(j)[0], k, i) for i, j in zip(evals_k, evecs_k))
+            evals[k] = evals_k
+            evecs[k] = evecs_k
 
             for n, en, vn in zip(range(nroots), evals_k, evecs_k):
                 r1, r2 = self.ea_vector_to_amplitudes(vn)
@@ -1122,14 +1127,39 @@ class RCCSD(pyscf.cc.ccsd.CCSD):
 
 KRCCSD = RCCSD
 
+
+def get_fock(cc, mo_coeff, suppress_exxdiv):
+    """
+    Retrieves Fock matrix for the MO-basis Hamiltonian.
+    Args:
+        cc (RCCSD): CC kernel;
+        mo_coeff (array): mean-field MOs;
+        suppress_exxdiv (bool): whether to suppress exxdiv special treatment;
+
+    Returns:
+
+        The Fock matrix in MO basis.
+    """
+    dm = cc._scf.make_rdm1(cc.mo_coeff, cc.mo_occ)
+    cell = cc._scf.cell
+    if suppress_exxdiv:
+        with lib.temporary_env(cc._scf, exxdiv=None):
+            # _scf.exxdiv affects eris.fock. HF exchange correction should be
+            # excluded from the Fock matrix.
+            fockao = cc._scf.get_hcore() + cc._scf.get_veff(cell, dm)
+    else:
+        fockao = cc._scf.get_hcore() + cc._scf.get_veff(cell, dm)
+    return np.asarray([reduce(np.dot, (mo.T.conj(), fockao[k], mo))
+                            for k, mo in enumerate(mo_coeff)])
+
+
 class _ERIS:  # (pyscf.cc.ccsd._ChemistsERIs):
-    def __init__(self, cc, mo_coeff=None, method='incore', suppress_exxdiv=True,
+    def __init__(self, cc, mo_coeff=None, method='incore',
                  ao2mofn=pyscf.ao2mo.outcore.general_iofree):
         from pyscf.pbc import df
         from pyscf.pbc import tools
         from pyscf.pbc.cc.ccsd import _adjust_occ
         cput0 = (time.clock(), time.time())
-        moidx = get_frozen_mask(cc)
         cell = cc._scf.cell
         kpts = cc.kpts
         nkpts = cc.nkpts
@@ -1146,18 +1176,8 @@ class _ERIS:  # (pyscf.cc.ccsd._ChemistsERIs):
         dtype = mo_coeff[0].dtype
 
         mo_coeff = self.mo_coeff = padded_mo_coeff(cc, mo_coeff)
-
-        # Re-make our fock MO matrix elements from density and fock AO
-        dm = cc._scf.make_rdm1(cc.mo_coeff, cc.mo_occ)
-        if suppress_exxdiv:
-            with lib.temporary_env(cc._scf, exxdiv=None):
-                # _scf.exxdiv affects eris.fock. HF exchange correction should be
-                # excluded from the Fock matrix.
-                fockao = cc._scf.get_hcore() + cc._scf.get_veff(cell, dm)
-        else:
-            fockao = cc._scf.get_hcore() + cc._scf.get_veff(cell, dm)
-        self.fock = np.asarray([reduce(np.dot, (mo.T.conj(), fockao[k], mo))
-                                for k, mo in enumerate(mo_coeff)])
+        self.fock = get_fock(cc, mo_coeff, True)
+        self.corrected_fock = get_fock(cc, mo_coeff, False)
 
         self.mo_energy = [self.fock[k].diagonal().real for k in range(nkpts)]
         # Add HFX correction in the self.mo_energy to improve convergence in
@@ -1521,6 +1541,32 @@ def _mem_usage(nkpts, nocc, nvir):
     # TODO: Improve incore estimate and add outcore estimate
     outcore = basic = incore
     return incore * 16 / 1e6, outcore * 16 / 1e6, basic * 16 / 1e6
+
+
+def correct_eom_g0(ccsd, kind, r1, kid, energy):
+    log = logger.Logger(ccsd.stdout, ccsd.verbose)
+    if kind not in ("ip", "ea"):
+        raise ValueError("Kind argument should be one of 'ip', 'ea'")
+    w = abs(r1) ** 2
+    prim = np.argsort(w)[::-1]
+    log.debug1("Primary contribution @i={:d} has weight {:.3e}".format(
+        prim[0], w[prim[0]],
+    ))
+    if len(w) > 1:
+        log.debug1("Next largest contribution @i={:d} has weight {:.3e}".format(
+            prim[1], w[prim[1]],
+        ))
+    take = prim[0]
+    if kind == "ea":
+        take += ccsd.nocc
+    raw_moe = ccsd.eris.fock[kid][take, take]
+    corrected_moe = ccsd.eris.corrected_fock[kid][take, take]
+    if kind == "ip":
+        raw_moe, corrected_moe = - raw_moe, - corrected_moe
+    correction = energy - raw_moe
+    final_moe = corrected_moe + correction
+    log.debug1("Root correction {:.3e} Hartree".format(correction))
+    return final_moe
 
 
 if __name__ == '__main__':
