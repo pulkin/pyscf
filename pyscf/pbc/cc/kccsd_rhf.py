@@ -963,7 +963,7 @@ class RCCSD(pyscf.cc.ccsd.CCSD):
                 evals_k, evecs_k = [evals_k], [evecs_k]
 
             if g0fix:
-                evals_k = tuple(correct_eom_g0(self, "ea", self.ip_vector_to_amplitudes(j)[0], k, i) for i, j in zip(evals_k, evecs_k))
+                evals_k = tuple(correct_eom_g0(self, "ea", self.ea_vector_to_amplitudes(j)[0], k, i) for i, j in zip(evals_k, evecs_k))
             evals[k] = evals_k
             evecs[k] = evecs_k
 
