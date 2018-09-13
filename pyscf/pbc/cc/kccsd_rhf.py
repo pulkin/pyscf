@@ -1558,15 +1558,15 @@ def correct_eom_g0(ccsd, kind, r1, kid, energy):
     if kind == "ip":
         raw_moe, corrected_moe = - raw_moe, - corrected_moe
     correction = energy - raw_moe
-    final_moe = corrected_moe + correction
+    final_energy = corrected_moe + correction
     log.debug1("| Root value: \t{:.16f}".format(energy))
     log.debug1("| Max weight: \tw={:.3f} @ i={:d}".format(
         w[prim[0]], prim[0],
     ))
-    log.debug1("| MO {:d} energy: \t{:.16f} (kind={})".format(take, corrected_moe, kind))
-    log.debug1("| Raw energy: \t{:.16f}".format(raw_moe))
-    log.debug1("| Correction: \t{:.16f}".format(correction))
-    return final_moe
+    log.debug1("| MO index: \t{:d}".format(take))
+    log.debug1("| MO: \t{:.16f} -> \t{:.16f}".format(raw_moe, corrected_moe))
+    log.debug1("| E: \t{:.16f} -> \t{:.16f}".format(energy, final_energy))
+    return final_energy
 
 
 if __name__ == '__main__':
