@@ -1553,23 +1553,19 @@ def correct_eom_g0(ccsd, kind, r1, kid, energy):
     take = prim[0]
     if kind == "ea":
         take += ccsd.nocc
-    raw_moe = ccsd.eris.fock[kid][take, take]
-    corrected_moe = ccsd.eris.corrected_fock[kid][take, take]
+    raw_moe = ccsd.eris.fock[kid][take, take].real
+    corrected_moe = ccsd.eris.corrected_fock[kid][take, take].real
     if kind == "ip":
         raw_moe, corrected_moe = - raw_moe, - corrected_moe
     correction = energy - raw_moe
     final_moe = corrected_moe + correction
     log.debug1("| Root value: \t{:.16f}".format(energy))
-    log.debug1("| QP weight primary contribution \tw={:.3f} @ i={:d}".format(
+    log.debug1("| Max weight: \tw={:.3f} @ i={:d}".format(
         w[prim[0]], prim[0],
     ))
-    if len(w) > 1:
-        log.debug1("| QP weight secondary contribution \tw={:.3f} @ i={:d}".format(
-            w[prim[0]], prim[0],
-        ))
-    log.debug1("| Taking mo {:d}: \t{:.16f} (kind={})".format(take, corrected_moe, kind))
-    log.debug1("| Correction: \t{:.16f} (raw mo E={:.16f})".format(correction, raw_moe))
-    log.debug1("| Result: \t{:.16f}".format(final_moe))
+    log.debug1("| MO {:d} energy: \t{:.16f} (kind={})".format(take, corrected_moe, kind))
+    log.debug1("| Raw energy: \t{:.16f}".format(raw_moe))
+    log.debug1("| Correction: \t{:.16f}".format(correction))
     return final_moe
 
 
