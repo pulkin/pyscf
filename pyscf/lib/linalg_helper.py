@@ -359,6 +359,7 @@ def davidson1(aop, x0, precond, tol=1e-12, max_cycle=50, max_space=12,
     lessio = lessio and not _incore
     log.debug1('max_cycle %d  max_space %d  max_memory %d  incore %s',
                max_cycle, max_space, max_memory, _incore)
+    dtype = None
     heff = None
     fresh_start = True
     e = 0
@@ -393,10 +394,15 @@ def davidson1(aop, x0, precond, tol=1e-12, max_cycle=50, max_space=12,
         rnow = len(xt)
         head, space = space, space+rnow
 
+        if dtype is None:
+            try:
+                dtype = numpy.result_type(axt[0], xt[0])
+            except IndexError:
+                dtype = numpy.result_type(ax[0].dtype, xs[0].dtype)
         if heff is None:  # Lazy initilize heff to determine the dtype
-            heff = numpy.empty((max_space+nroots,max_space+nroots), dtype=ax[0].dtype)
+            heff = numpy.empty((max_space+nroots,max_space+nroots), dtype=dtype)
         else:
-            heff = numpy.asarray(heff, dtype=ax[0].dtype)
+            heff = numpy.asarray(heff, dtype=dtype)
 
         elast = e
         vlast = v
@@ -463,7 +469,7 @@ def davidson1(aop, x0, precond, tol=1e-12, max_cycle=50, max_space=12,
         max_dx_norm = max(dx_norm)
         ide = numpy.argmax(abs(de))
         if all(conv):
-            log.debug('converge %d %d  |r|= %4.3g  e= %s  max|de|= %4.3g',
+            log.debug('converged %d %d  |r|= %4.3g  e= %s  max|de|= %4.3g',
                       icyc, space, max_dx_norm, e, de[ide])
             break
         elif (follow_state and max_dx_norm > 1 and
@@ -712,6 +718,7 @@ def davidson_nosym1(aop, x0, precond, tol=1e-12, max_cycle=50, max_space=12,
     lessio = lessio and not _incore
     log.debug1('max_cycle %d  max_space %d  max_memory %d  incore %s',
                max_cycle, max_space, max_memory, _incore)
+    dtype = None
     heff = None
     fresh_start = True
     e = 0
@@ -746,10 +753,15 @@ def davidson_nosym1(aop, x0, precond, tol=1e-12, max_cycle=50, max_space=12,
         rnow = len(xt)
         head, space = space, space+rnow
 
+        if dtype is None:
+            try:
+                dtype = numpy.result_type(axt[0], xt[0])
+            except IndexError:
+                dtype = numpy.result_type(ax[0].dtype, xs[0].dtype)
         if heff is None:  # Lazy initilize heff to determine the dtype
-            heff = numpy.empty((max_space+nroots,max_space+nroots), dtype=axt[0].dtype)
+            heff = numpy.empty((max_space+nroots,max_space+nroots), dtype=dtype)
         else:
-            heff = numpy.asarray(heff, dtype=axt[0].dtype)
+            heff = numpy.asarray(heff, dtype=dtype)
 
         elast = e
         vlast = v
@@ -813,7 +825,7 @@ def davidson_nosym1(aop, x0, precond, tol=1e-12, max_cycle=50, max_space=12,
         max_dx_norm = max(dx_norm)
         ide = numpy.argmax(abs(de))
         if all(conv):
-            log.debug('converge %d %d  |r|= %4.3g  e= %s  max|de|= %4.3g',
+            log.debug('converged %d %d  |r|= %4.3g  e= %s  max|de|= %4.3g',
                       icyc, space, max_dx_norm, e, de[ide])
             break
         elif (follow_state and max_dx_norm > 1 and
@@ -1114,7 +1126,7 @@ def dgeev1(abop, x0, precond, type=1, tol=1e-12, max_cycle=50, max_space=12,
 
         ide = numpy.argmax(abs(de))
         if abs(de[ide]) < tol:
-            log.debug('converge %d %d  e= %s  max|de|= %4.3g',
+            log.debug('converged %d %d  e= %s  max|de|= %4.3g',
                       icyc, space, e, de[ide])
             conv = True
             break
@@ -1131,7 +1143,7 @@ def dgeev1(abop, x0, precond, type=1, tol=1e-12, max_cycle=50, max_space=12,
         ax0 = bx0 = None
 
         if max(dx_norm) < toloose:
-            log.debug('converge %d %d  |r|= %4.3g  e= %s  max|de|= %4.3g',
+            log.debug('converged %d %d  |r|= %4.3g  e= %s  max|de|= %4.3g',
                       icyc, space, max(dx_norm), e, de[ide])
             conv = True
             break
@@ -1350,8 +1362,9 @@ def dsolve(aop, b, precond, tol=1e-12, max_cycle=30, dot=numpy.dot,
     xs = [precond(b)]
     ax = [aop(xs[-1])]
 
-    aeff = numpy.zeros((max_cycle,max_cycle), dtype=ax[0].dtype)
-    beff = numpy.zeros((max_cycle), dtype=ax[0].dtype)
+    dtype = numpy.result_type(ax[0], xs[0])
+    aeff = numpy.zeros((max_cycle,max_cycle), dtype=dtype)
+    beff = numpy.zeros((max_cycle), dtype=dtype)
     for istep in range(max_cycle):
         beff[istep] = dot(xs[istep], b)
         for i in range(istep+1):

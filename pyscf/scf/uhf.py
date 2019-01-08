@@ -105,7 +105,7 @@ def init_guess_by_chkfile(mol, chkfile_name, project=None):
 
     mo = scf_rec['mo_coeff']
     mo_occ = scf_rec['mo_occ']
-    if hasattr(mo[0], 'ndim') and mo[0].ndim == 1:  # RHF
+    if getattr(mo[0], 'ndim', None) == 1:  # RHF
         if numpy.iscomplexobj(mo):
             raise NotImplementedError('TODO: project DHF orbital to UHF orbital')
         mo_coeff = fproj(mo)
@@ -113,7 +113,7 @@ def init_guess_by_chkfile(mol, chkfile_name, project=None):
         mo_occb = mo_occ - mo_occa
         dm = make_rdm1([mo_coeff,mo_coeff], [mo_occa,mo_occb])
     else: #UHF
-        if hasattr(mo[0][0], 'ndim') and mo[0][0].ndim == 2:  # KUHF
+        if getattr(mo[0][0], 'ndim', None) == 2:  # KUHF
             logger.warn(mol, 'k-point UHF results are found.  Density matrix '
                         'at Gamma point is used for the molecular SCF initial guess')
             mo = mo[0]
@@ -131,8 +131,8 @@ def make_rdm1(mo_coeff, mo_occ, **kwargs):
     '''
     mo_a = mo_coeff[0]
     mo_b = mo_coeff[1]
-    dm_a = numpy.dot(mo_a*mo_occ[0], mo_a.T.conj())
-    dm_b = numpy.dot(mo_b*mo_occ[1], mo_b.T.conj())
+    dm_a = numpy.dot(mo_a*mo_occ[0], mo_a.conj().T)
+    dm_b = numpy.dot(mo_b*mo_occ[1], mo_b.conj().T)
 # DO NOT make tag_array for DM here because the DM arrays may be modified and
 # passed to functions like get_jk, get_vxc.  These functions may take the tags
 # (mo_coeff, mo_occ) to compute the potential if tags were found in the DM
@@ -738,7 +738,7 @@ class UHF(hf.SCF):
         if chkfile is None: chkfile = self.chkfile
         return init_guess_by_chkfile(self.mol, chkfile, project=project)
 
-    def get_jk(self, mol=None, dm=None, hermi=1):
+    def get_jk(self, mol=None, dm=None, hermi=1, with_j=True, with_k=True):
         '''Coulomb (J) and exchange (K)
 
         Args:
@@ -750,10 +750,10 @@ class UHF(hf.SCF):
         if self._eri is not None or mol.incore_anyway or self._is_mem_enough():
             if self._eri is None:
                 self._eri = mol.intor('int2e', aosym='s8')
-            vj, vk = hf.dot_eri_dm(self._eri, dm, hermi)
+            vj, vk = hf.dot_eri_dm(self._eri, dm, hermi, with_j, with_k)
         else:
-            vj, vk = hf.SCF.get_jk(self, mol, dm, hermi)
-        return numpy.asarray(vj), numpy.asarray(vk)
+            vj, vk = hf.SCF.get_jk(self, mol, dm, hermi, with_j, with_k)
+        return vj, vk
 
     @lib.with_doc(get_veff.__doc__)
     def get_veff(self, mol=None, dm=None, dm_last=0, vhf_last=0, hermi=1):

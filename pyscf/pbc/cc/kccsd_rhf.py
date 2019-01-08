@@ -269,7 +269,7 @@ def add_vvvv_(cc, Ht2, t1, t2, eris):
     kconserv = cc.khelper.kconserv
 
     mem_now = lib.current_memory()[0]
-    if cc.direct and hasattr(eris, 'Lpv'):
+    if cc.direct and getattr(eris, 'Lpv', None) is not None:
         #: If memory is not enough to hold eris.Lpv
         #:def get_Wvvvv(ka, kb, kc):
         #:    kd = kconserv[ka,kc,kb]
@@ -760,7 +760,10 @@ class _IMDS:
         self.made_ea_imds = False
         self._made_shared_2e = False
         # TODO: check whether to hold all stuff in memory
-        self._fimd = lib.H5TmpFile() if hasattr(self.eris, "feri1") else None
+        if getattr(self.eris, "feri1", None):
+            self._fimd = lib.H5TmpFile()
+        else:
+            self._fimd = None
 
     def _make_shared_1e(self):
         cput0 = (time.clock(), time.time())
