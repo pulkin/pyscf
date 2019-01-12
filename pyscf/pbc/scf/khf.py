@@ -658,6 +658,11 @@ class KSCF(pbchf.SCF):
             cell = self.cell
         return dip_moment(cell, dm, unit, verbose, rho=rho, kpts=self.kpts, **kwargs)
 
+    def _finalize(self):
+        '''Hook for dumping results and clearing up the object.'''
+        mol_hf.SCF._finalize(self)
+        return self
+
     canonicalize = canonicalize
 
     def density_fit(self, auxbasis=None, with_df=None):
