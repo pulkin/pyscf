@@ -661,6 +661,7 @@ class KSCF(pbchf.SCF):
     def _finalize(self):
         '''Hook for dumping results and clearing up the object.'''
         mol_hf.SCF._finalize(self)
+        # TODO: Makov-Payne correction
         return self
 
     canonicalize = canonicalize
