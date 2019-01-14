@@ -534,6 +534,7 @@ class KSCF(pbchf.SCF):
     get_fermi = get_fermi
 
     def get_j(self, cell=None, dm_kpts=None, hermi=1, kpts=None, kpts_band=None):
+        if dm_kpts is None: dm_kpts = self.make_rdm1()
         vj = self.with_df.get_jk(dm_kpts, hermi, kpts, kpts_band, with_k=False)[0]
         return vj
 
