@@ -313,9 +313,12 @@ def kernel(eri, driver=None, nroots=None, **kwargs):
     """
     if not isinstance(eri, TDDFTMatrixBlocks):
         raise ValueError("The argument must be ERI object")
-    logger.debug1(eri.model, "Preparing TDHF matrix ...")
+    logger.debug1(eri.model, "Preparing a TDHF matrix ...")
     m = eri.tdhf_matrix(**kwargs)
-    logger.debug1(eri.model, "Diagonalizing a {} matrix with '{}' ...".format('x'.join(map(str, m.shape)), driver))
+    logger.debug1(eri.model, "Diagonalizing a {} matrix with '{}' ...".format(
+        'x'.join(map(str, m.shape)),
+        "'{}'".format(driver if driver is not None else "default"),
+    ))
     vals, vecs = eig(m, driver=driver, nroots=nroots)
     return vals, vecs
 
