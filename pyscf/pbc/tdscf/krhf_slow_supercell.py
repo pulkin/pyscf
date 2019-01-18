@@ -44,7 +44,7 @@ def k_nocc(model):
     Returns:
         Numbers of occupied orbitals in the model.
     """
-    return tuple(int(i.sum()) // 2 for i in model.mo_occ)
+    return tuple(int(i.sum() // 2) for i in model.mo_occ)
 
 
 def k_nmo(model):
@@ -56,37 +56,81 @@ def k_nmo(model):
     Returns:
         Numbers of AOs in the model.
     """
-    return tuple(i.shape[0] for i in model.mo_coeff)
+    return tuple(i.shape[1] for i in model.mo_coeff)
+
+
+def format_frozen(frozen, nmo, nk):
+    """
+    Formats the argument into a mask array of bools where False values correspond to frozen orbitals for each k-point.
+    Args:
+        frozen (int, Iterable): the number of frozen valence orbitals or the list of frozen orbitals for all k-points or
+        multiple lists of frozen orbitals for each k-point;
+        nmo (int): the total number of molecular orbitals;
+        nk (int): the total number of k-points;
+
+    Returns:
+        The mask array.
+    """
+    space = numpy.ones((nk, nmo), dtype=bool)
+    if frozen is None:
+        pass
+    elif isinstance(frozen, int):
+        space[:, :frozen] = False
+    elif isinstance(frozen, (tuple, list, numpy.ndarray)):
+        if len(frozen) > 0:
+            if isinstance(frozen[0], int):
+                space[:, frozen] = False
+            else:
+                for i in range(nk):
+                    space[i, frozen[i]] = False
+    else:
+        raise ValueError("Cannot recognize the 'frozen' argument: expected None, int or Iterable")
+    return space
 
 
 class PhysERI(td.TDDFTMatrixBlocks):
 
-    def __init__(self, model):
+    def __init__(self, model, frozen=None):
         """
         The TDHF ERI implementation performing a full transformation of integrals to Bloch functions. No symmetries are
         employed in this class.
 
         Args:
             model (KRHF): the base model;
+            frozen (int, Iterable): the number of frozen valence orbitals or the list of frozen orbitals for all
+            k-points or multiple lists of frozen orbitals for each k-point;
         """
         super(PhysERI, self).__init__()
         self.model = model
+        self.space = format_frozen(frozen, len(model.mo_energy[0]), len(model.kpts))
         # Phys representation
         self.kconserv = get_kconserv(self.model.cell, self.model.kpts).swapaxes(1, 2)
         self.__full_eri_k__ = {}
         for k in loop_kkk(len(model.kpts)):
             k = k + (self.kconserv[k],)
-            self.__full_eri_k__[k] = self.ao2mo_k(tuple(self.model.mo_coeff[j] for j in k), k)
+            self.__full_eri_k__[k] = self.ao2mo_k(tuple(self.mo_coeff[j] for j in k), k)
+
+    @property
+    def mo_coeff(self):
+        return tuple(i[:, j] for i, j in zip(self.model.mo_coeff, self.space))
+
+    @property
+    def mo_energy(self):
+        return tuple(i[j] for i, j in zip(self.model.mo_energy, self.space))
+
+    @property
+    def mo_occ(self):
+        return tuple(i[j] for i, j in zip(self.model.mo_occ, self.space))
 
     @property
     def nocc(self):
         """Numbers of occupied orbitals."""
-        return k_nocc(self.model)
+        return k_nocc(self)
 
     @property
     def nmo(self):
         """Numbers of AOs per k-point."""
-        return k_nmo(self.model)
+        return k_nmo(self)
 
     def ao2mo_k(self, coeff, k):
         """
@@ -107,7 +151,7 @@ class PhysERI(td.TDDFTMatrixBlocks):
 
     def __get_mo_energies__(self, k1, k2):
         """This routine collects occupied and virtual MO energies."""
-        return self.model.mo_energy[k1][:self.nocc[k1]], self.model.mo_energy[k2][self.nocc[k2]:]
+        return self.mo_energy[k1][:self.nocc[k1]], self.mo_energy[k2][self.nocc[k2]:]
 
     def tdhf_diag_k(self, k1, k2):
         """
@@ -196,22 +240,25 @@ class PhysERI4(PhysERI):
         ((3, 2, 1, 0), True),
     ]
 
-    def __init__(self, model):
+    def __init__(self, model, frozen=None):
         """
         The TDHF ERI implementation performing a partial transformation of integrals to Bloch functions. A 4-fold
         symmetry of complex-valued wavefunctions is employed in this class.
 
         Args:
             model (KRHF): the base model;
+            frozen (int, Iterable): the number of frozen valence orbitals or the list of frozen orbitals for all
+            k-points or multiple lists of frozen orbitals for each k-point;
         """
-        super(PhysERI, self).__init__()
+        td.TDDFTMatrixBlocks.__init__(self)
         self.model = model
+        self.space = format_frozen(frozen, len(model.mo_energy[0]), len(model.kpts))
         self.kconserv = get_kconserv(self.model.cell, self.model.kpts).swapaxes(1, 2)
 
     def __calc_block__(self, item, k):
         if self.kconserv[k[:3]] == k[3]:
             return self.ao2mo_k(tuple(
-                self.model.mo_coeff[_k][:, :self.nocc[_k]] if i == "o" else self.model.mo_coeff[_k][:, self.nocc[_k]:]
+                self.mo_coeff[_k][:, :self.nocc[_k]] if i == "o" else self.mo_coeff[_k][:, self.nocc[_k]:]
                 for i, _k in zip(item, k)
             ), k)
         else:
@@ -234,15 +281,17 @@ class PhysERI8(PhysERI4):
         ((1, 2, 3, 0), False),
     ]
 
-    def __init__(self, model):
+    def __init__(self, model, frozen=None):
         """
         The TDHF ERI implementation performing a partial transformation of integrals to Bloch functions. An 8-fold
         symmetry of real-valued wavefunctions is employed in this class.
 
         Args:
             model (KRHF): the base model;
+            frozen (int, Iterable): the number of frozen valence orbitals or the list of frozen orbitals for all
+            k-points or multiple lists of frozen orbitals for each k-point;
         """
-        super(PhysERI8, self).__init__(model)
+        super(PhysERI8, self).__init__(model, frozen=frozen)
 
 
 def vector_to_amplitudes(vectors, nocc, nmo):

@@ -1,4 +1,5 @@
 from pyscf.pbc.tdscf.krhf_slow_supercell import k_nocc
+from pyscf.pbc.tdscf.krhf_slow import get_block_k_ix
 
 import numpy
 from numpy import testing
@@ -72,24 +73,74 @@ def adjust_mf_phase(model1, model2, threshold=1e-5):
         model2.mo_coeff[:, o2] /= p[numpy.newaxis, :]
 
 
+def tdhf_frozen_mask(eri, kind="ov"):
+    if isinstance(eri.nocc, int):
+        nocc = int(eri.model.mo_occ.sum() // 2)
+        mask = eri.space
+    else:
+        nocc = numpy.array(tuple(int(i.sum() // 2) for i in eri.model.mo_occ))
+        assert numpy.all(nocc == nocc[0])
+        assert numpy.all(eri.space == eri.space[0, numpy.newaxis, :])
+        nocc = nocc[0]
+        mask = eri.space[0]
+    mask_o = mask[:nocc]
+    mask_v = mask[nocc:]
+    if kind == "ov":
+        mask_ov = numpy.outer(mask_o, mask_v).reshape(-1)
+        return numpy.tile(mask_ov, 2)
+    elif kind == "sov":
+        mask_ov = numpy.outer(mask_o, mask_v).reshape(-1)
+        nk = len(eri.model.mo_occ)
+        return numpy.tile(mask_ov, 2 * nk ** 2)
+    elif kind == "o,v":
+        return mask_o, mask_v
+
+
+def convert_k2s(vectors, k, eri):
+    """Converts vectors from k-representation to the supercell space by padding with zeros."""
+    nv, _, nk, nocc, nvirt = vectors.shape
+    # _ = 2
+    result = numpy.zeros((nv, _, nk, nk, nocc, nvirt), dtype=vectors.dtype)
+    r1, r2, _, _ = get_block_k_ix(eri, k)
+    for k1 in range(nk):
+        k2_x = r1[k1]
+        result[:, 0, k1, k2_x] = vectors[:, 0, k1]
+        k2_y = r2[k1]
+        result[:, 1, k1, k2_y] = vectors[:, 1, k1]
+    return result
+
+
 def adjust_td_phase(model1, model2, threshold=1e-5):
     """Tunes the phase of the 2 time-dependent models to a common value."""
     signatures = []
     orders = []
+    space = []
 
     for m in (model1, model2):
         # Are there k-points?
         if "kpts" in dir(m._scf):
             # Is it a supercell model, Gamma model or a true k-model?
-            if isinstance(m.xy, dict):
-                # A true k-model, take k = 0
-                raise NotImplementedError("Implement me")
-            elif len(m.xy.shape) == 6:
-                # A supercell model
-                xy = m.xy.reshape(len(m.e), -1)
-                xy = xy[:, ov_order(m._scf)]
+            if isinstance(m.xy, dict) or len(m.xy.shape) == 6:
+                if isinstance(m.xy, dict):
+                    # A true k-model
+                    xy = []
+                    e = []
+                    for k in range(len(m.e)):
+                        xy.append(convert_k2s(m.xy[k], k, m.eri))
+                        e.append(m.e[k])
+                    xy = numpy.concatenate(xy)
+                    e = numpy.concatenate(e)
+                else:
+                    # A supercell model
+                    xy = m.xy
+                    e = m.e
+                xy = xy.reshape(len(e), -1)
+                order_truncated = ov_order(m._scf, m.eri.space)
+                order_orig = ov_order(m._scf)
+                xy = xy[:, order_truncated]
                 signatures.append(xy)
-                orders.append(numpy.argsort(m.e))
+                orders.append(numpy.argsort(e))
+                space.append(tdhf_frozen_mask(m.eri, "sov")[order_orig])
             elif len(m.xy.shape) == 5:
                 # Gamma model
                 raise NotImplementedError("Implement me")
@@ -98,18 +149,38 @@ def adjust_td_phase(model1, model2, threshold=1e-5):
         else:
             signatures.append(m.xy.reshape(len(m.e), -1))
             orders.append(numpy.argsort(m.e))
+            space.append(tdhf_frozen_mask(m.eri))
+
+    common_space = None
+    for i in space:
+        if i is not None:
+            if common_space is None:
+                common_space = i.copy()
+            else:
+                common_space = numpy.logical_and(common_space, i)
 
     m1, m2 = signatures
     o1, o2 = orders
     m1, m2 = m1[o1, :], m2[o2, :]
+
+    if common_space is not None:
+        space = list(common_space[i] if i is not None else common_space for i in space)
+        s1, s2 = space
+        m1 = m1[:, s1]
+        m2 = m2[:, s2]
 
     p = phase_difference(m1, m2, axis=0, threshold=threshold)
 
     if "kpts" in dir(model2._scf):
         # Is it a supercell model, Gamma model or a true k-model?
         if isinstance(m.xy, dict):
-            # A true k-model, take k = 0
-            raise NotImplementedError("Implement me")
+            # A true k-model
+            nvec_per_kp = len(m.e[0])
+            for k in range(len(m.e)):
+                o2_kp_mask = o2 // nvec_per_kp == k
+                o2_kp = o2[o2_kp_mask] % nvec_per_kp
+                p_kp = p[o2_kp_mask]
+                model2.xy[k][o2_kp, ...] /= p_kp[(slice(None),) + (numpy.newaxis,) * 4]
         elif len(m.xy.shape) == 6:
             # A supercell model
             model2.xy[o2, ...] /= p[(slice(None),) + (numpy.newaxis,) * 5]
@@ -119,7 +190,7 @@ def adjust_td_phase(model1, model2, threshold=1e-5):
         else:
             raise ValueError("Unknown vectors: {}".format(repr(m.xy)))
     else:
-        model2.xy[o2, ...] /= p[(slice(None),) + (numpy.newaxis,) * 5]
+        model2.xy[o2, ...] /= p[(slice(None),) + (numpy.newaxis,) * 3]
 
 
 def remove_phase_difference(v1, v2, axis=0, threshold=1e-5):
@@ -144,10 +215,12 @@ def assert_vectors_close(v1, v2, axis=0, threshold=1e-5, atol=1e-8):
         ))
 
 
-def ov_order(model):
+def ov_order(model, slc=None):
     nocc = k_nocc(model)
-    e_occ = tuple(e[:o] for e, o in zip(model.mo_energy, nocc))
-    e_virt = tuple(e[o:] for e, o in zip(model.mo_energy, nocc))
+    if slc is None:
+        slc = numpy.ones((len(model.mo_coeff), model.mo_coeff[0].shape[1]), dtype=bool)
+    e_occ = tuple(e[:o][s[:o]] for e, o, s in zip(model.mo_energy, nocc, slc))
+    e_virt = tuple(e[o:][s[o:]] for e, o, s in zip(model.mo_energy, nocc, slc))
     sort_o = []
     sort_v = []
     for o in e_occ:
