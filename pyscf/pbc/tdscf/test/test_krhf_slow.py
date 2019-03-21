@@ -6,7 +6,7 @@ import unittest
 from numpy import testing
 import numpy
 
-from test_common import assert_vectors_close, tdhf_frozen_mask
+from test_common import retrieve_m_khf, assert_vectors_close, tdhf_frozen_mask
 
 
 def k2k(*indexes):
@@ -19,7 +19,7 @@ def k2k(*indexes):
 
 
 class DiamondTest(unittest.TestCase):
-    """Compare this (krhf_slow) @2kp@Gamma vs `krhf_slow_gamma` and `krhf_slow_supercell`."""
+    """Compare this (krhf_slow) @2kp@Gamma vs reference (krhf_slow_gamma, krhf_slow_supercell)."""
     k = 2
     k_c = (0, 0, 0)
     test8 = True
@@ -53,12 +53,12 @@ class DiamondTest(unittest.TestCase):
         # Gamma
         cls.td_model_rhf_gamma = gtd.TDRHF(model_krhf)
         cls.td_model_rhf_gamma.kernel()
-        cls.ref_m_gamma = cls.td_model_rhf_gamma.eri.tdhf_matrix()
+        cls.ref_m_gamma = cls.td_model_rhf_gamma.eri.tdhf_full_form()
 
         # Supercell
         cls.td_model_rhf_supercell = std.TDRHF(model_krhf)
         cls.td_model_rhf_supercell.kernel()
-        cls.ref_m_supercell = cls.td_model_rhf_supercell.eri.tdhf_matrix()
+        cls.ref_m_supercell = cls.td_model_rhf_supercell.eri.tdhf_full_form()
 
     @classmethod
     def tearDownClass(cls):
@@ -73,10 +73,13 @@ class DiamondTest(unittest.TestCase):
         for eri in (ktd.PhysERI, ktd.PhysERI4, ktd.PhysERI8):
             if eri is not ktd.PhysERI8 or self.test8:
                 try:
-
                     e = eri(self.model_krhf)
-                    m = e.tdhf_matrix(0)
+                    m = e.tdhf_full_form(0)
 
+                    # Test matrix vs ref
+                    testing.assert_allclose(m, retrieve_m_khf(e, 0), atol=1e-11)
+
+                    # Test matrix vs pyscf
                     testing.assert_allclose(self.ref_m_gamma, m, atol=1e-12)
                 except Exception:
                     print("When testing {} the following exception occurred:".format(eri))
@@ -117,13 +120,13 @@ class DiamondTest(unittest.TestCase):
                         c = k2k(c1, c2)
 
                         # Build matrix
-                        _m = e.tdhf_matrix(k)
+                        _m = e.tdhf_full_form(k)
 
                         # Assign the submatrix
                         m[numpy.ix_(r, c)] = _m.reshape((2*self.k, o*v, 2*self.k, o*v)).transpose(0, 2, 1, 3)
 
                     m = m.transpose(0, 2, 1, 3).reshape(self.ref_m_supercell.shape)
-                    testing.assert_allclose(self.ref_m_supercell, m, atol=1e-12)
+                    testing.assert_allclose(self.ref_m_supercell, m, atol=1e-11)
                 except Exception:
                     print("When testing {} the following exception occurred:".format(eri))
                     raise
@@ -131,15 +134,9 @@ class DiamondTest(unittest.TestCase):
     def test_eig_kernel(self):
         """Tests container behavior (supercell)."""
         model = ktd.TDRHF(self.model_krhf)
+        assert not model.fast
         model.kernel()
-        # vals = []
-        # vecs = []
         o = v = 4
-        # eri = ktd.PhysERI4(self.model_krhf)
-        # for k in range(self.k):
-        #     va, ve = ktd.kernel(self.model_krhf, k, driver='eig')
-        #     vals.append(va)
-        #     vecs.append(ve)
 
         # Concatenate everything
         ks = numpy.array(sum(([i] * len(model.e[i]) for i in range(self.k)), []))
@@ -177,7 +174,7 @@ class DiamondTest(unittest.TestCase):
 
 
 class DiamondTest3(DiamondTest):
-    """Compare this (krhf_slow) @3kp@Gamma vs vs `krhf_slow_supercell`."""
+    """Compare this (krhf_slow) @3kp@Gamma vs reference (krhf_slow_supercell)."""
     k = 3
     k_c = (0.1, 0, 0)
     test8 = False

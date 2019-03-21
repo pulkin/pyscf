@@ -3,9 +3,9 @@ from pyscf.pbc.scf import RHF, KRHF
 from pyscf.pbc.tdscf import KTDHF
 from pyscf.pbc.tdscf import krhf_slow_supercell as ktd, rhf_slow as td
 from pyscf.pbc.tools.pbc import super_cell
-from pyscf.tdscf.rhf_slow import eig
+from pyscf.tdscf.common_slow import eig
 
-from test_common import retrieve_m, adjust_mf_phase, ov_order, assert_vectors_close, tdhf_frozen_mask
+from test_common import retrieve_m, retrieve_m_hf, adjust_mf_phase, ov_order, assert_vectors_close, tdhf_frozen_mask
 
 import unittest
 from numpy import testing
@@ -13,7 +13,7 @@ import numpy
 
 
 class DiamondTestGamma(unittest.TestCase):
-    """Compare this (supercell_slow) @Gamma vs reference."""
+    """Compare this (krhf_supercell_slow) @Gamma vs reference (pyscf)."""
     @classmethod
     def setUpClass(cls):
         cls.cell = cell = Cell()
@@ -54,7 +54,7 @@ class DiamondTestGamma(unittest.TestCase):
         """Tests all ERI implementations: with and without symmetries."""
         for eri in (ktd.PhysERI, ktd.PhysERI4, ktd.PhysERI8):
             e = eri(self.model_krhf)
-            m = e.tdhf_matrix()
+            m = e.tdhf_full_form()
             try:
                 testing.assert_allclose(self.ref_m_krhf, m, atol=1e-14)
                 vals, vecs = eig(m, nroots=self.td_model_krhf.nroots)
@@ -67,7 +67,15 @@ class DiamondTestGamma(unittest.TestCase):
         """Tests container behavior."""
         model = ktd.TDRHF(self.model_krhf)
         model.nroots = self.td_model_krhf.nroots
+        assert model.fast
         model.kernel()
+        e, xy = model.kernel()
+        model.fast = False
+        model.kernel()
+        # Slow vs fast
+        testing.assert_allclose(model.e, e)
+        assert_vectors_close(model.xy, xy)
+        # ... vs ref
         testing.assert_allclose(model.e, self.td_model_krhf.e, atol=1e-5)
         try:
             assert_vectors_close(model.xy.squeeze(), numpy.array(self.td_model_krhf.xy).squeeze(), atol=1e-12)
@@ -78,7 +86,7 @@ class DiamondTestGamma(unittest.TestCase):
 
 
 class DiamondTestShiftedGamma(unittest.TestCase):
-    """Compare this (supercell_slow) @non-Gamma 1kp vs rhf_slow."""
+    """Compare this (krhf_supercell_slow) @non-Gamma vs reference (rhf_slow)."""
     @classmethod
     def setUpClass(cls):
         cls.cell = cell = Cell()
@@ -119,7 +127,7 @@ class DiamondTestShiftedGamma(unittest.TestCase):
         # The Gamma-point TD
         cls.td_model_rhf = td_model_rhf = td.TDRHF(model_rhf)
         td_model_rhf.kernel()
-        cls.ref_m = td_model_rhf.eri.tdhf_matrix()
+        cls.ref_m = td_model_rhf.eri.tdhf_full_form()
 
     @classmethod
     def tearDownClass(cls):
@@ -132,10 +140,14 @@ class DiamondTestShiftedGamma(unittest.TestCase):
     def test_eri(self):
         """Tests all ERI implementations: with and without symmetries."""
         for eri in (ktd.PhysERI, ktd.PhysERI4):
-            e = eri(self.model_krhf)
-            m = e.tdhf_matrix()
-
             try:
+                e = eri(self.model_krhf)
+                m = e.tdhf_full_form()
+
+                # Test matrix vs ref
+                testing.assert_allclose(m, retrieve_m_hf(e), atol=1e-14)
+
+                # Test matrix vs pyscf
                 testing.assert_allclose(self.ref_m, m, atol=1e-10)
             except Exception:
                 print("When testing {} the following exception occurred:".format(eri))
@@ -145,6 +157,7 @@ class DiamondTestShiftedGamma(unittest.TestCase):
         """Tests container behavior."""
         model = ktd.TDRHF(self.model_krhf)
         model.nroots = self.td_model_rhf.nroots
+        assert not model.fast
         model.kernel()
         testing.assert_allclose(model.e, self.td_model_rhf.e, atol=1e-5)
         nocc = nvirt = 4
@@ -153,7 +166,7 @@ class DiamondTestShiftedGamma(unittest.TestCase):
 
 
 class DiamondTestSupercell2(unittest.TestCase):
-    """Compare this (supercell_slow) @2kp vs rhf_slow (2x1x1 supercell)."""
+    """Compare this (krhf_supercell_slow) @2kp vs supercell reference (rhf_slow)."""
     k = 2
     k_c = (0, 0, 0)
     test8 = True
@@ -206,7 +219,7 @@ class DiamondTestSupercell2(unittest.TestCase):
         # The Gamma-point TD
         cls.td_model_rhf = td_model_rhf = td.TDRHF(model_rhf)
         td_model_rhf.kernel()
-        cls.ref_m = td_model_rhf.eri.tdhf_matrix()
+        cls.ref_m = td_model_rhf.eri.tdhf_full_form()
 
     @classmethod
     def tearDownClass(cls):
@@ -220,10 +233,14 @@ class DiamondTestSupercell2(unittest.TestCase):
         """Tests all ERI implementations: with and without symmetries."""
         for eri in (ktd.PhysERI, ktd.PhysERI4, ktd.PhysERI8):
             if not eri == ktd.PhysERI8 or self.test8:
-                e = eri(self.model_krhf)
-                m = e.tdhf_matrix()
-
                 try:
+                    e = eri(self.model_krhf)
+                    m = e.tdhf_full_form()
+
+                    # Test matrix vs ref
+                    testing.assert_allclose(m, retrieve_m_hf(e), atol=1e-11)
+
+                    # Test matrix vs pyscf
                     testing.assert_allclose(self.ref_m, m[numpy.ix_(self.ov_order, self.ov_order)], atol=1e-5)
                 except Exception:
                     print("When testing {} the following exception occurred:".format(eri))
@@ -233,16 +250,19 @@ class DiamondTestSupercell2(unittest.TestCase):
         """Tests container behavior."""
         model = ktd.TDRHF(self.model_krhf)
         model.nroots = self.td_model_rhf.nroots
+        assert not model.fast
         model.kernel()
         testing.assert_allclose(model.e, self.td_model_rhf.e, atol=1e-5)
         nocc = nvirt = 4
         testing.assert_equal(model.xy.shape, (len(model.e), 2, self.k, self.k, nocc, nvirt))
         vecs = model.xy.reshape(len(model.xy), -1)[:, self.ov_order]
-        assert_vectors_close(vecs, numpy.array(self.td_model_rhf.xy).squeeze(), atol=1e-6)
+        assert_vectors_close(vecs, numpy.array(self.td_model_rhf.xy).squeeze(), atol=1e-5)
+        # Test real
+        testing.assert_allclose(model.e.imag, 0, atol=1e-8)
 
 
 class DiamondTestSupercell3(DiamondTestSupercell2):
-    """Compare this (supercell_slow) @3kp vs rhf_slow (3x1x1 supercell)."""
+    """Compare this (supercell_slow) @3kp vs supercell reference (rhf_slow)."""
     k = 3
     k_c = (.1, 0, 0)
     test8 = False

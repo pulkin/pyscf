@@ -19,6 +19,7 @@ procedure. Several variants of TDHF are available:
 """
 
 from pyscf.pbc.tdscf import krhf_slow_supercell as td
+from pyscf.tdscf import rhf_slow
 
 import numpy
 
@@ -28,10 +29,6 @@ import numpy
 #   symmetry and with an 8-fold symmetry
 # * vector_to_amplitudes reshapes and normalizes the solution
 # * TDRHF provides a container
-
-
-k_nocc = td.k_nocc
-k_nmo = td.k_nmo
 
 
 class PhysERI(td.PhysERI):
@@ -171,7 +168,7 @@ def vector_to_amplitudes(vectors, nocc, nmo):
     return vectors.transpose(4, 0, 1, 2, 3)
 
 
-class TDRHF(td.TDRHF):
+class TDRHF(rhf_slow.TDRHF):
     eri4 = PhysERI4
     eri8 = PhysERI8
     v2a = staticmethod(vector_to_amplitudes)

@@ -19,6 +19,8 @@ procedure. Several variants of TDHF are available:
 """
 
 from pyscf.pbc.tdscf import krhf_slow_supercell as td
+from pyscf.tdscf import rhf_slow
+from pyscf.tdscf.common_slow import mknj2i
 
 import numpy
 
@@ -30,10 +32,8 @@ import numpy
 # * TDRHF provides a container
 
 
-k_nocc = td.k_nocc
-
-
 class PhysERI(td.PhysERI):
+    primary_driver = "full"
 
     def __init__(self, model, frozen=None):
         """
@@ -57,7 +57,7 @@ class PhysERI(td.PhysERI):
         Returns:
             Row and column indexes of a sub-block with conserving momentum.
         """
-        item_i = numpy.argsort(self.__mknj2i__(item))
+        item_i = numpy.argsort(mknj2i(item))
         item_code = ''.join("++--"[i] for i in item_i)
         if item_code[0] == item_code[1]:
             kc = self.kconserv  # ++-- --++
@@ -101,31 +101,24 @@ class PhysERI(td.PhysERI):
             pairs_column=enumerate(pair_column),
         )
 
-    def tdhf_matrix(self, k):
+    def tdhf_primary_form(self, k):
         """
-        Full matrix of the TDRHF problem.
+        A primary form of TDHF matrixes (full).
         Args:
             k (tuple, int): momentum transfer: either a pair of k-point indexes specifying the momentum transfer
             vector or a single integer with the second index assuming the first index being zero;
 
         Returns:
-            The matrix.
+            Output type: "full", and the corresponding matrix.
         """
         r1, r2, c1, c2 = get_block_k_ix(self, k)
-
         d1 = self.tdhf_diag(r1)
         d2 = self.tdhf_diag(r2)
-
-        m11 = d1 + 2 * self["knmj", r1, c1] - self["knjm", r1, c1]
-        m12 = 2 * self["kjmn", r1, c2] - self["kjnm", r1, c2]
-        m21 = 2 * self["mnkj", r2, c1] - self["mnjk", r2, c1]
-        m22 = d2 + 2 * self["mjkn", r2, c2] - self["mjnk", r2, c2]
-
-        m = numpy.array([[m11, m12], [-m21, -m22]])
-
-        return m.transpose((0, 2, 1, 3)).reshape(
-            (m.shape[0] * m.shape[2], m.shape[1] * m.shape[3])
-        )
+        a = d1 + 2 * self["knmj", r1, c1] - self["knjm", r1, c1]
+        b = 2 * self["kjmn", r1, c2] - self["kjnm", r1, c2]
+        a_ = d2 + 2 * self["mjkn", r2, c2] - self["mjnk", r2, c2]
+        b_ = 2 * self["mnkj", r2, c1] - self["mnjk", r2, c1]
+        return "full", numpy.block([[a, b], [-b_, -a_]])
 
 
 class PhysERI4(PhysERI):
@@ -268,7 +261,7 @@ def vector_to_amplitudes(vectors, nocc, nmo):
     return vectors.transpose(4, 0, 1, 2, 3)
 
 
-class TDRHF(td.TDRHF):
+class TDRHF(rhf_slow.TDRHF):
     eri4 = PhysERI4
     eri8 = PhysERI8
     v2a = staticmethod(vector_to_amplitudes)
