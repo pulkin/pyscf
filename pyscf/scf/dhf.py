@@ -175,11 +175,7 @@ def init_guess_by_chkfile(mol, chkfile_name, project=None):
         project = not gto.same_basis_set(chk_mol, mol)
 
     # Check whether the two molecules are similar
-    def inertia_momentum(mol):
-        im = gto.inertia_momentum(mol._atom, mol.atom_charges(),
-                                  mol.atom_coords())
-        return scipy.linalg.eigh(im)[0]
-    if abs(inertia_momentum(mol) - inertia_momentum(chk_mol)).sum() > 0.5:
+    if abs(mol.inertia_moment() - chk_mol.inertia_moment()).sum() > 0.5:
         logger.warn(mol, "Large deviations found between the input "
                     "molecule and the molecule from chkfile\n"
                     "Initial guess density matrix may have large error.")
@@ -251,6 +247,7 @@ def analyze(mf, verbose=logger.DEBUG, **kwargs):
     mo_occ = mf.mo_occ
     mo_coeff = mf.mo_coeff
 
+    mf.dump_scf_summary(log)
     log.info('**** MO energy ****')
     for i in range(len(mo_energy)):
         if mo_occ[i] > 0:
@@ -562,6 +559,14 @@ class UHF(hf.SCF):
     def nuc_grad_method(self):
         from pyscf.grad import dhf
         return dhf.Gradients(self)
+
+    def reset(self, mol):
+        '''Reset mol and clean up relevant attributes for scanner mode'''
+        self.mol = mol
+        self._coulomb_now = 'SSSS' # 'SSSS' ~ LLLL+LLSS+SSSS
+        self.opt = (None, None, None, None) # (opt_llll, opt_ssll, opt_ssss, opt_gaunt)
+        return self
+
 DHF = UHF
 
 
@@ -574,7 +579,8 @@ class HF1e(UHF):
         s1e = self.get_ovlp(self.mol)
         self.mo_energy, self.mo_coeff = self.eig(h1e, s1e)
         self.mo_occ = self.get_occ(self.mo_energy, self.mo_coeff)
-        self.e_tot = self.mo_energy[self.mo_occ>0][0] + self.mol.energy_nuc()
+        self.e_tot = (self.mo_energy[self.mo_occ>0][0] +
+                      self.mol.energy_nuc()).real
         self._finalize()
         return self.e_tot
 

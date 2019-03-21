@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Copyright 2014-2018 The PySCF Developers. All Rights Reserved.
+# Copyright 2014-2019 The PySCF Developers. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -722,6 +722,11 @@ def as_scanner(ci):
             else:
                 mol = self.mol.set_geom_(mol_or_geom, inplace=False)
 
+            for key in ('with_df', 'with_solvent'):
+                sub_mod = getattr(self, key, None)
+                if sub_mod:
+                    sub_mod.reset(mol)
+
             mf_scanner = self._scf
             mf_scanner(mol)
             self.mol = mol
@@ -1026,6 +1031,10 @@ class CISD(lib.StreamObject):
 
 class RCISD(CISD):
     pass
+
+from pyscf import scf
+scf.hf.RHF.CISD = lib.class_as_method(RCISD)
+scf.rohf.ROHF.CISD = None
 
 def _cp(a):
     return numpy.array(a, copy=False, order='C')

@@ -231,7 +231,11 @@ def spatial2spin(tx, orbspin, kconserv):
         return spatial2spin((tx,tx), orbspin, kconserv)
     elif isinstance(tx, numpy.ndarray) and tx.ndim == 7:
         # KRCCSD t2 amplitudes
-        t2aa = tx - tx.transpose(0,1,2,4,3,5,6)
+        t2aa = numpy.zeros_like(tx)
+        nkpts = t2aa.shape[2]
+        for ki, kj, ka in kpts_helper.loop_kkk(nkpts):
+            kb = kconserv[ki,ka,kj]
+            t2aa[ki,kj,ka] = tx[ki,kj,ka] - tx[ki,kj,kb].transpose(0,1,3,2)
         return spatial2spin((t2aa,tx,t2aa), orbspin, kconserv)
     elif len(tx) == 2:  # KUCCSD t1
         t1a, t1b = tx
@@ -333,6 +337,7 @@ class GCCSD(gccsd.GCCSD):
         if not isinstance(mf, scf.kghf.KGHF):
             mf = scf.addons.convert_to_ghf(mf)
         self.kpts = mf.kpts
+        self.khelper = kpts_helper.KptsHelper(mf.cell, mf.kpts)
         gccsd.GCCSD.__init__(self, mf, frozen, mo_coeff, mo_occ)
 
     @property
@@ -412,6 +417,13 @@ class GCCSD(gccsd.GCCSD):
             return _make_eris_incore(self, mo_coeff)
         else:
             raise NotImplementedError
+
+    def ccsd_t(self, t1=None, t2=None, eris=None):
+        from pyscf.pbc.cc import kccsd_t
+        if t1 is None: t1 = self.t1
+        if t2 is None: t2 = self.t2
+        if eris is None: eris = self.ao2mo(self.mo_coeff)
+        return kccsd_t.kernel(self, eris, t1, t2, self.verbose)
 
     def amplitudes_to_vector(self, t1, t2):
         return numpy.hstack((t1.ravel(), t2.ravel()))

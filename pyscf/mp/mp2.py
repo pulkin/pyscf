@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Copyright 2014-2018 The PySCF Developers. All Rights Reserved.
+# Copyright 2014-2019 The PySCF Developers. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -283,6 +283,11 @@ def as_scanner(mp):
             else:
                 mol = self.mol.set_geom_(mol_or_geom, inplace=False)
 
+            for key in ('with_df', 'with_solvent'):
+                sub_mod = getattr(self, key, None)
+                if sub_mod:
+                    sub_mod.reset(mol)
+
             mf_scanner = self._scf
             mf_scanner(mol)
             self.mol = mol
@@ -401,6 +406,10 @@ class MP2(lib.StreamObject):
         return mp2.Gradients(self)
 
 RMP2 = MP2
+
+from pyscf import scf
+scf.hf.RHF.MP2 = lib.class_as_method(MP2)
+scf.rohf.ROHF.MP2 = None
 
 
 def _mo_energy_without_core(mp, mo_energy):

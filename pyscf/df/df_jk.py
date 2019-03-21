@@ -16,11 +16,9 @@
 # Author: Qiming Sun <osirpt.sun@gmail.com>
 #
 
-import sys
 import copy
 import time
 import ctypes
-from functools import reduce
 import numpy
 import scipy.linalg
 from pyscf import lib
@@ -112,7 +110,6 @@ def density_fit(mf, auxbasis=None, with_df=None):
 
         def get_jk(self, mol=None, dm=None, hermi=1, with_j=True, with_k=True):
             if self.with_df:
-                if mol is None: mol = self.mol
                 if dm is None: dm = self.make_rdm1()
                 vj, vk = self.with_df.get_jk(dm, hermi, with_j, with_k,
                                              self.direct_scf_tol)
@@ -128,11 +125,20 @@ def density_fit(mf, auxbasis=None, with_df=None):
         def _cderi(self, x):
             self.with_df._cderi = x
 
+        def nuc_grad_method(self):
+            raise NotImplementedError
+
+    for k, v in _METHODS_TO_ASSIGN.items():
+        setattr(DFHF, k, v)
     return DFHF(mf)
 
 # A tag to label the derived SCF class
 class _DFHF:
     pass
+
+# Some methods should be attached to the DF-SCF class in density_fit function
+# above. They can be registered in _METHODS_TO_ASSIGN.
+_METHODS_TO_ASSIGN = {}
 
 
 def get_jk(dfobj, dm, hermi=1, with_j=True, with_k=True, direct_scf_tol=1e-13):
@@ -230,8 +236,7 @@ def get_jk(dfobj, dm, hermi=1, with_j=True, with_k=True, direct_scf_tol=1e-13):
                      ctypes.c_int(naux), *rargs)
 
                 buf2 = lib.unpack_tril(eri1, out=buf[1])
-                vk[k] += lib.dot(buf1.reshape(-1,nao).T,
-                                 buf2.reshape(-1,nao))
+                vk[k] += lib.dot(buf1.reshape(-1,nao).T, buf2.reshape(-1,nao))
             t1 = log.timer_debug1('jk', *t1)
 
     if with_j: vj = lib.unpack_tril(vj, 1).reshape(dm_shape)

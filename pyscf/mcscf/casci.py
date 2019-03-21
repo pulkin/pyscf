@@ -533,6 +533,16 @@ def as_scanner(mc):
             else:
                 mol = self.mol.set_geom_(mol_or_geom, inplace=False)
 
+            # These properties can be updated when calling mf_scanner(mol) if
+            # they are shared with mc._scf. In certain scenario the properties
+            # may be created for mc separately, e.g. when mcscf.approx_hessian is
+            # called. For safety, the code below explicitly resets these
+            # properties.
+            for key in ('with_df', 'with_x2c', 'with_solvent', 'with_dftd3'):
+                sub_mod = getattr(self, key, None)
+                if sub_mod:
+                    sub_mod.reset(mol)
+
             if mo_coeff is None:
                 mf_scanner = self._scf
                 mf_scanner(mol)
@@ -654,13 +664,7 @@ class CASCI(lib.StreamObject):
             self.nelecas = (neleca, nelecb)
         else:
             self.nelecas = (nelecas[0],nelecas[1])
-        if ncore is None:
-            ncorelec = mol.nelectron - (self.nelecas[0]+self.nelecas[1])
-            assert(ncorelec % 2 == 0)
-            self.ncore = ncorelec // 2
-        else:
-            assert(isinstance(ncore, (int, numpy.integer)))
-            self.ncore = ncore
+        self.ncore = ncore
         singlet = (getattr(__config__, 'mcscf_casci_CASCI_fcisolver_direct_spin0', False)
                    and self.nelecas[0] == self.nelecas[1])  # leads to direct_spin1
         self.fcisolver = fci.solver(mol, singlet, symm=False)
@@ -684,13 +688,28 @@ class CASCI(lib.StreamObject):
         keys = set(('natorb', 'canonicalization', 'sorting_mo_energy'))
         self._keys = set(self.__dict__.keys()).union(keys)
 
+    @property
+    def ncore(self):
+        if self._ncore is None:
+            ncorelec = self.mol.nelectron - sum(self.nelecas)
+            assert(ncorelec % 2 == 0)
+            return ncorelec // 2
+        else:
+            return self._ncore
+    @ncore.setter
+    def ncore(self, x):
+        assert(x is None or isinstance(x, (int, numpy.integer)))
+        self._ncore = x
+
     def dump_flags(self, verbose=None):
         log = logger.new_logger(self, verbose)
         log.info('')
         log.info('******** CASCI flags ********')
-        nvir = self.mo_coeff.shape[1] - self.ncore - self.ncas
+        ncore = self.ncore
+        ncas = self.ncas
+        nvir = self.mo_coeff.shape[1] - ncore - ncas
         log.info('CAS (%de+%de, %do), ncore = %d, nvir = %d', \
-                 self.nelecas[0], self.nelecas[1], self.ncas, self.ncore, nvir)
+                 self.nelecas[0], self.nelecas[1], ncas, ncore, nvir)
         assert(self.ncas > 0)
         log.info('natorb = %s', self.natorb)
         log.info('canonicalization = %s', self.canonicalization)
@@ -749,10 +768,14 @@ To enable the solvent model for CASSCF, a decoration to CASSCF object as below n
         '''
         return self.ao2mo(mo_coeff)
     def ao2mo(self, mo_coeff=None):
+        ncore = self.ncore
+        ncas = self.ncas
+        nocc = ncore + ncas
         if mo_coeff is None:
-            mo_coeff = self.mo_coeff[:,self.ncore:self.ncore+self.ncas]
-        elif mo_coeff.shape[1] != self.ncas:
-            mo_coeff = mo_coeff[:,self.ncore:self.ncore+self.ncas]
+            ncore = self.ncore
+            mo_coeff = self.mo_coeff[:,ncore:nocc]
+        elif mo_coeff.shape[1] != ncas:
+            mo_coeff = mo_coeff[:,ncore:nocc]
 
         if self._scf._eri is not None:
             eri = ao2mo.full(self._scf._eri, mo_coeff,
@@ -947,6 +970,9 @@ To enable the solvent model for CASSCF, a decoration to CASSCF object as below n
     def nuc_grad_method(self):
         from pyscf.grad import casci
         return casci.Gradients(self)
+
+scf.hf.RHF.CASCI = scf.rohf.ROHF.CASCI = lib.class_as_method(CASCI)
+scf.uhf.UHF.CASCI = None
 
 del(WITH_META_LOWDIN, LARGE_CI_TOL, PENALTY)
 

@@ -211,21 +211,20 @@ def update_amps(cc, t1, t2, eris):
     for ki in range(nkpts):
         ka = ki
         # Remove zero/padded elements from denominator
-        eia = LARGE_DENOM * np.ones((nocc, nvir), dtype=eris.mo_energy[0].dtype)
-        n0_ovp_ia = np.ix_(nonzero_opadding[ki], nonzero_vpadding[ka])
-        eia[n0_ovp_ia] = (mo_e_o[ki][:,None] - mo_e_v[ka])[n0_ovp_ia]
+        eia = _get_epq([0,nocc,ki,mo_e_o,nonzero_opadding],
+                       [0,nvir,ka,mo_e_v,nonzero_vpadding],
+                       fac=[1.0,-1.0])
         t1new[ki] /= eia
 
     for ki, kj, ka in kpts_helper.loop_kkk(nkpts):
         kb = kconserv[ki, ka, kj]
-        # For LARGE_DENOM, see t1new update above
-        eia = LARGE_DENOM * np.ones((nocc, nvir), dtype=eris.mo_energy[0].dtype)
-        n0_ovp_ia = np.ix_(nonzero_opadding[ki], nonzero_vpadding[ka])
-        eia[n0_ovp_ia] = (mo_e_o[ki][:,None] - mo_e_v[ka])[n0_ovp_ia]
+        eia = _get_epq([0,nocc,ki,mo_e_o,nonzero_opadding],
+                       [0,nvir,ka,mo_e_v,nonzero_vpadding],
+                       fac=[1.0,-1.0])
 
-        ejb = LARGE_DENOM * np.ones((nocc, nvir), dtype=eris.mo_energy[0].dtype)
-        n0_ovp_jb = np.ix_(nonzero_opadding[kj], nonzero_vpadding[kb])
-        ejb[n0_ovp_jb] = (mo_e_o[kj][:,None] - mo_e_v[kb])[n0_ovp_jb]
+        ejb = _get_epq([0,nocc,kj,mo_e_o,nonzero_opadding],
+                       [0,nvir,kb,mo_e_v,nonzero_vpadding],
+                       fac=[1.0,-1.0])
         eijab = eia[:, None, :, None] + ejb[:, None, :]
 
         t2new[ki, kj, ka] /= eijab
@@ -242,12 +241,12 @@ def energy(cc, t1, t2, eris):
     e = 0.0 + 1j * 0.0
     for ki in range(nkpts):
         e += 2 * einsum('ia,ia', fock[ki, :nocc, nocc:], t1[ki])
-    tau = t1t1 = np.zeros(shape=t2.shape, dtype=t2.dtype)
+    tau = np.zeros(shape=t2.shape, dtype=t2.dtype)
     for ki in range(nkpts):
         ka = ki
         for kj in range(nkpts):
             # kb = kj
-            t1t1[ki, kj, ka] = einsum('ia,jb->ijab', t1[ki], t1[kj])
+            tau[ki, kj, ka] = einsum('ia,jb->ijab', t1[ki], t1[kj])
     tau += t2
     for ki in range(nkpts):
         for kj in range(nkpts):
@@ -411,13 +410,13 @@ class RCCSD(pyscf.cc.ccsd.CCSD):
 
             kb = kconserv[ki, ka, kj]
             # For discussion of LARGE_DENOM, see t1new update above
-            eia = LARGE_DENOM * np.ones((nocc, nvir), dtype=eris.mo_energy[0].dtype)
-            n0_ovp_ia = np.ix_(nonzero_opadding[ki], nonzero_vpadding[ka])
-            eia[n0_ovp_ia] = (mo_e_o[ki][:,None] - mo_e_v[ka])[n0_ovp_ia]
+            eia = _get_epq([0,nocc,ki,mo_e_o,nonzero_opadding],
+                           [0,nvir,ka,mo_e_v,nonzero_vpadding],
+                           fac=[1.0,-1.0])
 
-            ejb = LARGE_DENOM * np.ones((nocc, nvir), dtype=eris.mo_energy[0].dtype)
-            n0_ovp_jb = np.ix_(nonzero_opadding[kj], nonzero_vpadding[kb])
-            ejb[n0_ovp_jb] = (mo_e_o[kj][:,None] - mo_e_v[kb])[n0_ovp_jb]
+            ejb = _get_epq([0,nocc,kj,mo_e_o,nonzero_opadding],
+                           [0,nvir,kb,mo_e_v,nonzero_vpadding],
+                           fac=[1.0,-1.0])
             eijab = eia[:, None, :, None] + ejb[:, None, :]
 
             eris_ijab = eris.oovv[ki, kj, ka]
@@ -470,8 +469,12 @@ class RCCSD(pyscf.cc.ccsd.CCSD):
         self._finalize()
         return self.e_corr, self.t1, self.t2
 
-    def ao2mo(self, mo_coeff=None):
-        return _ERIS(self, mo_coeff)
+    def ccsd_t(self, t1=None, t2=None, eris=None):
+        from pyscf.pbc.cc import kccsd_t_rhf
+        if t1 is None: t1 = self.t1
+        if t2 is None: t2 = self.t2
+        if eris is None: eris = self.ao2mo(self.mo_coeff)
+        return kccsd_t_rhf.kernel(self, eris, t1, t2, self.verbose)
 
     ipccsd = ipccsd
     eaccsd = eaccsd
@@ -878,8 +881,7 @@ if __name__ == '__main__':
     C 0.000000000000   0.000000000000   0.000000000000
     C 1.685068664391   1.685068664391   1.685068664391
     '''
-    cell.basis = {'C': [[0, (0.8, 1.0)],
-                        [1, (1.0, 1.0)]]}
+    cell.basis = 'gth-szv'
     cell.pseudo = 'gth-pade'
     cell.a = '''
     0.000000000, 3.370137329, 3.370137329
@@ -895,8 +897,8 @@ if __name__ == '__main__':
     ehf = kmf.kernel()
 
     mycc = cc.KRCCSD(kmf)
-    mycc.conv_tol = 1e-10
-    mycc.conv_tol_normt = 1e-10
+    #mycc.conv_tol = 1e-10
+    #mycc.conv_tol_normt = 1e-10
     ecc, t1, t2 = mycc.kernel()
     print(ecc - -0.155298393321855)
 

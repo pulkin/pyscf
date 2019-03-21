@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Copyright 2014-2018 The PySCF Developers. All Rights Reserved.
+# Copyright 2014-2019 The PySCF Developers. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -730,6 +730,25 @@ class UCCSD(ccsd.CCSD):
 
     def amplitudes_from_rccsd(self, t1, t2):
         return amplitudes_from_rccsd(t1, t2)
+
+    def get_t1_diagnostic(self, t1=None):
+        if t1 is None: t1 = self.t1
+        raise NotImplementedError
+        #return get_t1_diagnostic(t1)
+
+    def get_d1_diagnostic(self, t1=None):
+        if t1 is None: t1 = self.t1
+        raise NotImplementedError
+        #return get_d1_diagnostic(t1)
+
+    def get_d2_diagnostic(self, t2=None):
+        if t2 is None: t2 = self.t2
+        raise NotImplementedError
+        #return get_d2_diagnostic(t2)
+
+CCSD = UCCSD
+from pyscf import scf
+scf.uhf.UHF.CCSD = lib.class_as_method(CCSD)
 
 
 class _ChemistsERIs(ccsd._ChemistsERIs):
