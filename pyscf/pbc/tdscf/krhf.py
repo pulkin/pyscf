@@ -168,7 +168,7 @@ class TDHF(TDA):
             nz = len(xys)
             z1xs = [_unpack(xy[:tot_x], mo_occ) for xy in xys]
             z1ys = [_unpack(xy[tot_x:], mo_occ) for xy in xys]
-            dmov = numpy.empty((nz,nkpts,nao,nao), dtype=numpy.complex128)
+            dmov = numpy.empty((nz,nkpts,nao,nao), dtype=numpy.common_type(z1xs[0][0], z1ys[0][0], orbo[0], orbv[0]))
             for i in range(nz):
                 for k in range(nkpts):
                     # *2 for double occupancy
